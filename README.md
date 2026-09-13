@@ -60,6 +60,9 @@ Press **Alt+Shift+M** or click the Marshal toolbar icon, then speak. The popup s
 | "Open LinkedIn and summarize the top three posts for me" | Opens (or switches to) the LinkedIn feed, scrolls until 3 posts have loaded, and reads out a 3-bullet summary |
 | "Mute this tab" / "Unmute" | Toggles the tab's mute state |
 | "Turn the volume down" / "Turn it up" | Changes volume by 10 points on the tab that's playing sound. Uses YouTube's own player controls on YouTube so the slider stays in sync, and `<video>`/`<audio>` elements elsewhere |
+| "Full volume" / "Set volume to 30" / "Half volume" | Sets an exact volume level (full = 100) |
+| "Pause the video" / "Play" | Pauses or plays the video on the page |
+| "Make it full screen" / "Exit full screen" | Makes the browser window fullscreen with the video filling it, or restores it. Chrome only allows true video fullscreen after a click or keypress on the page, which a voice command can't provide |
 | "Open YouTube" / "Open Hacker News" | Opens the site, reusing an existing tab for it if there is one |
 | "Scroll down" | Scrolls the page |
 | "Summarize this page" | Reads out a 3-bullet summary of the current page |
