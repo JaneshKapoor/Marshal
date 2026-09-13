@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Marshal",
+  "description": "Voice-controlled browser agent: navigate, control tab audio, and summarize pages by voice.",
+  "version": "0.1.0",
+  "permissions": ["tabs", "scripting", "activeTab", "offscreen", "storage"],
+  "host_permissions": [
+    "<all_urls>",
+    "https://dictation.assemblyai.com/*",
+    "https://api.openai.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Marshal: click to talk",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "activate-marshal": {
+      "suggested_key": {
+        "default": "Alt+Shift+M",
+        "mac": "Alt+Shift+M"
+      },
+      "description": "Start listening for a voice command"
+    }
+  }
+}
