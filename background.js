@@ -1,10 +1,15 @@
 import { setStatus, getStatus, getKeys } from "./lib/status.js";
+import { routeIntent } from "./lib/router.js";
+import { openSite, setTabVolume, scrollPage, getActiveTab, extractForSummary } from "./lib/actions.js";
+import { summarize } from "./lib/summarize.js";
+
+const SUMMARY_MODEL = "gpt-4.1-mini";
 
 chrome.runtime.onInstalled.addListener(async () => {
   await setStatus("idle");
 });
 
-// ---------- Offscreen recorder ----------
+// ---------- Offscreen document (mic + speech) ----------
 
 let creatingOffscreen;
 async function ensureOffscreen() {
@@ -18,8 +23,8 @@ async function ensureOffscreen() {
     creatingOffscreen = chrome.offscreen
       .createDocument({
         url: "offscreen.html",
-        reasons: ["USER_MEDIA"],
-        justification: "Record a short voice command from the microphone.",
+        reasons: ["USER_MEDIA", "AUDIO_PLAYBACK"],
+        justification: "Record short voice commands and speak Marshal's replies.",
       })
       .finally(() => (creatingOffscreen = null));
   }
@@ -28,14 +33,48 @@ async function ensureOffscreen() {
 
 async function captureTranscript(assemblyKey) {
   await ensureOffscreen();
-  const res = await chrome.runtime.sendMessage({
-    target: "offscreen",
-    type: "record-and-transcribe",
-    assemblyKey,
-  });
+  const res = await chrome.runtime.sendMessage({ target: "offscreen", type: "record-and-transcribe", assemblyKey });
   if (!res) throw new Error("Recorder didn't respond.");
   if (!res.ok) throw new Error(res.error);
   return res;
+}
+
+async function speak(text) {
+  await setStatus("speaking", { result: text });
+  try {
+    await ensureOffscreen();
+    await chrome.runtime.sendMessage({ target: "offscreen", type: "speak", text });
+  } catch (e) {
+    console.warn("[Marshal] speech failed", e);
+  }
+}
+
+// ---------- Action dispatch ----------
+
+async function runSummary(tab, keys) {
+  await setStatus("thinking", { result: "Reading the page…" });
+  const extracted = await extractForSummary(tab);
+  console.log("[Marshal] extracted", extracted);
+  return summarize(extracted, { apiKey: keys.OPENAI_API_KEY, model: SUMMARY_MODEL });
+}
+
+async function dispatch(intent, keys) {
+  switch (intent.name) {
+    case "open_site": {
+      const { tab, message } = await openSite(intent.args.url, { waitForLoad: !!intent.args.summarize_after });
+      if (!intent.args.summarize_after) return message;
+      await speak(message);
+      return runSummary(await chrome.tabs.get(tab.id), keys);
+    }
+    case "set_tab_volume":
+      return (await setTabVolume(intent.args.action)).message;
+    case "scroll":
+      return (await scrollPage(intent.args.direction || "down")).message;
+    case "summarize_current_page":
+      return runSummary(await getActiveTab(), keys);
+    default:
+      return "I didn't catch a command for that.";
+  }
 }
 
 // ---------- Activation pipeline ----------
@@ -54,20 +93,35 @@ async function activate(source) {
   }
 
   console.log("[Marshal] activated via", source);
-  await setStatus("listening", { transcript: "", result: "", error: "" });
+  chrome.runtime.sendMessage({ target: "offscreen", type: "stop-speaking" }).catch(() => {});
+  await setStatus("listening", { transcript: "", result: "", error: "", intent: null, timings: null });
+  const t0 = Date.now();
   try {
     const t = await captureTranscript(keys.ASSEMBLYAI_API_KEY);
     if (t.noSpeech || !t.transcript) {
-      await setStatus("idle", { result: "I didn't hear anything." });
+      await speak("I didn't hear anything.");
+      await setStatus("idle");
       return;
     }
     console.log("[Marshal] transcript:", t.transcript, "| raw:", t.rawText, "|", t.transcribeMs, "ms");
     await setStatus("thinking", { transcript: t.transcript });
-    // TODO(marshal): Phase 3 routes the transcript through OpenAI function calling.
-    await setStatus("idle", { transcript: t.transcript, result: `Transcribed in ${t.transcribeMs} ms` });
+
+    const r0 = Date.now();
+    const intent = await routeIntent(t.transcript, { apiKey: keys.OPENAI_API_KEY, model: keys.OPENAI_MODEL });
+    const routeMs = Date.now() - r0;
+    console.log("[Marshal] intent:", intent, routeMs, "ms");
+    await setStatus("thinking", { intent, timings: { transcribeMs: t.transcribeMs, routeMs } });
+
+    const reply = intent ? await dispatch(intent, keys) : "I didn't catch a command for that.";
+    console.log("[Marshal] done in", Date.now() - t0, "ms:", reply);
+    await speak(reply);
+    await setStatus("idle", { result: reply });
   } catch (e) {
     console.error("[Marshal] pipeline error", e);
-    await setStatus("error", { error: e.message || String(e) });
+    const msg = e.message || String(e);
+    await setStatus("error", { error: msg });
+    await speak(`Sorry. ${msg}`);
+    await setStatus("error", { error: msg });
   }
 }
 
@@ -86,3 +140,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getStatus().then((s) => s.state === "listening" && setStatus("thinking"));
   }
 });
+
+// Exposed for manual testing from the service-worker console, e.g.
+//   marshal.dispatch({ name: "set_tab_volume", args: { action: "mute" } })
+//   marshal.runText("open youtube")
+globalThis.marshal = {
+  dispatch: async (intent) => dispatch(intent, await getKeys()),
+  runText: async (text) => {
+    const keys = await getKeys();
+    const intent = await routeIntent(text, { apiKey: keys.OPENAI_API_KEY, model: keys.OPENAI_MODEL });
+    const reply = intent ? await dispatch(intent, keys) : "I didn't catch a command for that.";
+    await speak(reply);
+    await setStatus("idle", { transcript: text, intent, result: reply });
+    return { intent, reply };
+  },
+};

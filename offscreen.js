@@ -18,7 +18,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: e.message || String(e) }));
     return true;
   }
+  if (msg.type === "speak") {
+    speak(msg.text).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  if (msg.type === "stop-speaking") {
+    speechSynthesis.cancel();
+    sendResponse({ ok: true });
+  }
 });
+
+// Spoken feedback via the browser-native speechSynthesis API.
+function speak(text) {
+  return new Promise((resolve) => {
+    if (!text) return resolve();
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text.replace(/^[-•*]\s*/gm, "").replace(/\n+/g, ". "));
+    u.rate = 1.05;
+    const voice = speechSynthesis.getVoices().find((v) => /en[-_]US/i.test(v.lang) && /Samantha|Google US English/i.test(v.name));
+    if (voice) u.voice = voice;
+    // Long utterances can stall without onend firing, so also cap the wait.
+    const timer = setTimeout(resolve, Math.min(60000, 2000 + text.length * 90));
+    u.onend = u.onerror = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    speechSynthesis.speak(u);
+  });
+}
 
 async function recordCommand() {
   let stream;
