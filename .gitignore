@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+*.zip
+.DS_Store
+
+# Local secrets — never commit
+.env
+.env.*
+config.js
+secrets.*
