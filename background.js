@@ -79,6 +79,13 @@ async function dispatch(intent, keys) {
 
 // ---------- Activation pipeline ----------
 
+async function muteAudibleTabs() {
+  const tabs = await chrome.tabs.query({ audible: true });
+  const toDuck = tabs.filter((t) => !t.mutedInfo?.muted);
+  await Promise.all(toDuck.map((t) => chrome.tabs.update(t.id, { muted: true }).catch(() => {})));
+  return toDuck.map((t) => t.id);
+}
+
 async function activate(source) {
   const { state } = await getStatus();
   if (state === "listening" || state === "thinking") {
@@ -97,7 +104,15 @@ async function activate(source) {
   await setStatus("listening", { transcript: "", result: "", error: "", intent: null, timings: null });
   const t0 = Date.now();
   try {
-    const t = await captureTranscript(keys.ASSEMBLYAI_API_KEY);
+    // Duck playing tabs while recording so the mic hears the user, not the video.
+    // Restored before routing so mute/unmute commands see the real state.
+    const ducked = await muteAudibleTabs();
+    let t;
+    try {
+      t = await captureTranscript(keys.ASSEMBLYAI_API_KEY);
+    } finally {
+      await Promise.all(ducked.map((id) => chrome.tabs.update(id, { muted: false }).catch(() => {})));
+    }
     if (t.noSpeech || !t.transcript) {
       await speak("I didn't hear anything.");
       await setStatus("idle");
