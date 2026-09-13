@@ -1,6 +1,6 @@
 import { setStatus, getStatus, getKeys } from "./lib/status.js";
 import { routeIntent } from "./lib/router.js";
-import { openSite, setTabVolume, scrollPage, getActiveTab, extractForSummary } from "./lib/actions.js";
+import { openSite, setTabVolume, mediaControl, scrollPage, getActiveTab, extractForSummary } from "./lib/actions.js";
 import { summarize } from "./lib/summarize.js";
 
 const SUMMARY_MODEL = "gpt-4.1-mini";
@@ -67,7 +67,9 @@ async function dispatch(intent, keys) {
       return runSummary(await chrome.tabs.get(tab.id), keys);
     }
     case "set_tab_volume":
-      return (await setTabVolume(intent.args.action)).message;
+      return (await setTabVolume(intent.args.action, intent.args.level)).message;
+    case "media_control":
+      return (await mediaControl(intent.args.action)).message;
     case "scroll":
       return (await scrollPage(intent.args.direction || "down")).message;
     case "summarize_current_page":
